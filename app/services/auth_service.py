@@ -4,10 +4,11 @@ from app.core.security import verify_password, create_access_token, ACCESS_TOKEN
 from app.core.database import supabase_client
 from datetime import timedelta
 
-def authenticate_admin(form_data: OAuth2PasswordRequestForm):
-    # Buscar usuario por username (u otro identificador)
-    response = supabase_client.table("admin_users").select("*").eq("username", form_data.username).execute()
+def authenticate_user(form_data: OAuth2PasswordRequestForm):
+    # Buscar usuario por username
+    response = supabase_client.table("users").select("*").eq("username", form_data.username).execute()
     users = response.data
+    print(f"DEBUG: Buscando usuario '{form_data.username}'. Encontrados: {len(users)}")
     
     if not users:
         raise HTTPException(
@@ -19,7 +20,10 @@ def authenticate_admin(form_data: OAuth2PasswordRequestForm):
     user = users[0]
     
     # Validar pass
-    if not verify_password(form_data.password, user['hashed_password']):
+    is_valid = verify_password(form_data.password, user['hashed_password'])
+    print(f"DEBUG: Autenticando usuario '{form_data.username}'. ¿Password coincide?: {is_valid}")
+    
+    if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -28,7 +32,7 @@ def authenticate_admin(form_data: OAuth2PasswordRequestForm):
         
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user["username"], "role": "admin"}, expires_delta=access_token_expires
+        data={"sub": user["username"], "role": user["role"]}, expires_delta=access_token_expires
     )
     
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {"access_token": access_token, "token_type": "bearer", "role": user["role"]}

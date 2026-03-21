@@ -1,0 +1,14 @@
+.git
+__pycache__
+venv
+.env
+Dockerfile
+docker-compose.yml
+*.pyc
+*.pyo
+*.pyd
+.db
+.sqlite3
+node_modules
+package-lock.json
+package.json

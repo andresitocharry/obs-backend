@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1 import admin, schema, upload
+from app.api.v1 import admin, schema, upload, indicators
 
 app = FastAPI(
     title="Data Quality Gate API",
@@ -8,10 +8,14 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Configurar CORS (ajustar en producción)
+import os
+
+# Configurar CORS para producción
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Permitir todos los orígenes por ahora (Frontend en local o Docker)
+    allow_origins=["*"], # Permisivo para desarrollo mi bro
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -20,6 +24,7 @@ app.add_middleware(
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(schema.router, prefix="/api/v1")
 app.include_router(upload.router, prefix="/api/v1")
+app.include_router(indicators.router, prefix="/api/v1")
 
 @app.get("/")
 def read_root():
