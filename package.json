@@ -3,7 +3,7 @@
     "version": "1.0.0",
     "description": "Backend for Data Quality Gate",
     "scripts": {
-        "docker:local": "docker-compose up -d --build",
+        "docker:local": "docker-compose up --build",
         "docker:stop": "docker-compose down",
         "docker:logs": "docker-compose logs -f",
         "docker:clean": "docker-compose down -v --rmi all",
