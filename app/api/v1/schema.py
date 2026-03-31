@@ -4,25 +4,15 @@ from typing import List
 from app.schemas.schema_rule import SchemaRule, SchemaRuleCreate, SchemaRuleUpdate
 from app.services.schema_service import get_all_rules, create_rule, update_rule, delete_rule
 from app.services.indicator_service import get_indicator_dependencies_for_rule
-from fastapi.security import OAuth2PasswordBearer
-from jose import jwt, JWTError
-from app.core.config import settings
-from app.core.security import ALGORITHM
+from app.core.auth import get_current_user
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/admin/login")
-
-def get_current_user_data(token: str = Depends(oauth2_scheme)):
-    # PRESENTATION BYPASS: Return a default admin if auth fails
-    try:
-        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        role: str = payload.get("role")
-        return {"username": username, "role": role}
-    except Exception:
-        return {"username": "admin_guest", "role": "admin"}
-
-def get_current_admin(user_data: dict = Depends(get_current_user_data)):
-    # Always allow in presentation mode
+def get_current_admin(user_data: dict = Depends(get_current_user)):
+    role = user_data.get("role")
+    if role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Se requieren permisos de administrador"
+        )
     return user_data
 
 router = APIRouter(prefix="/admin/schema", tags=["schema management"])

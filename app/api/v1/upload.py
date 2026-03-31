@@ -1,10 +1,11 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Depends
 import pandas as pd
 import io
 import uuid
 from typing import Dict, Any
 
 from app.services.dynamic_validator import generate_dynamic_model, validate_dataframe_chunk
+from app.core.auth import get_current_user
 
 router = APIRouter(prefix="/upload", tags=["file upload"])
 
@@ -70,7 +71,11 @@ def process_file_background(job_id: str, file_contents: bytes, filename: str):
 
 
 @router.post("/")
-async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+async def upload_file(
+    background_tasks: BackgroundTasks, 
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
     if not file.filename.endswith(('.csv', '.xlsx', '.xls')):
         raise HTTPException(status_code=400, detail="Only CSV or Excel files are allowed.")
     

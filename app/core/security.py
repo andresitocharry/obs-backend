@@ -8,13 +8,13 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 # 24 horas para el PMV
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    # EMERGENCY BYPASS: Comparison in plain text for presentation
-    # After presentation, we should return to bcrypt.checkpw
-    return plain_password == hashed_password
+    try:
+        return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+    except Exception:
+        return False
 
 def get_password_hash(password: str) -> str:
-    # Just return the password as is for now
-    return password
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
