@@ -26,11 +26,11 @@ async def create_new_rule(rule: SchemaRuleCreate, current_admin: dict = Depends(
     return create_rule(rule)
 
 @router.put("/{rule_id}", response_model=SchemaRule)
-async def update_existing_rule(rule_id: int, rule: SchemaRuleUpdate, current_admin: dict = Depends(get_current_admin)):
+async def update_existing_rule(rule_id: str, rule: SchemaRuleUpdate, current_admin: dict = Depends(get_current_admin)):
     return update_rule(rule_id, rule)
 
 @router.delete("/{rule_id}")
-async def remove_rule(rule_id: int, current_admin: dict = Depends(get_current_admin)):
+async def remove_rule(rule_id: str, current_admin: dict = Depends(get_current_admin)):
     # Check for indicator dependencies
     dependencies = get_indicator_dependencies_for_rule(rule_id)
     if dependencies:
