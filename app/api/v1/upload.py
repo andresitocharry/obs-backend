@@ -2,12 +2,14 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks,
 import pandas as pd
 import io
 import uuid
-import json
-from typing import Dict, Any
 
 from app.services.dynamic_validator import run_validation_engine
+from app.services.etl_bronze_silver import ejecutar_etl_desde_bronze
 from app.core.auth import get_current_user
 from app.core.database import supabase_client
+
+# Hoja estándar de la herramienta Canguro que contiene todas las columnas
+_HOJA_DATOS = "DB_TOTAL"
 
 router = APIRouter(prefix="/upload", tags=["file upload"])
 
@@ -127,45 +129,76 @@ async def get_validation_report(
         "errors": report.get("errors")
     }
 
+def _etl_background(upload_id: str, nombre_fundacion: str) -> None:
+    """BackgroundTask: ejecuta el ETL Bronze→Silver después del promote."""
+    try:
+        ejecutar_etl_desde_bronze(upload_id=upload_id, nombre_fundacion=nombre_fundacion)
+    except Exception as e:
+        print(f"[ETL background] Error en upload_id={upload_id}: {e}")
+        supabase_client.table("upload_sessions").update(
+            {"status": "etl_error"}
+        ).eq("id", upload_id).execute()
+
+
 @router.post("/pipeline/promote")
 async def promote_to_bronze(
     upload_id: str,
-    current_user: dict = Depends(get_current_user)
+    background_tasks: BackgroundTasks,
+    nombre_fundacion: str = "Fundación Canguro",
+    current_user: dict = Depends(get_current_user),
 ):
     session_res = supabase_client.table("upload_sessions").select("*").eq("id", upload_id).execute()
     if not session_res.data:
         raise HTTPException(status_code=404, detail="Upload ID no encontrado.")
-        
+
     session = session_res.data[0]
-    
-    # REGLA: Si tiene errores, ¿se puede promover? Usualmente no, pero según el negocio. Asumamos que debe ser 'valid'.
+
     if session["status"] != "valid":
-         raise HTTPException(status_code=400, detail=f"No se puede promover un archivo {session['status']}. Debe estar 'valid'.")
-         
-    # Descargar datos desde storage y serializar
+        raise HTTPException(
+            status_code=400,
+            detail=f"No se puede promover un archivo con estado '{session['status']}'. Debe estar 'valid'."
+        )
+
+    # Descargar archivo desde Storage
     storage_path = f"{upload_id}_{session['filename']}"
     downloaded = supabase_client.storage.from_("temp_uploads").download(storage_path)
-    
-    if session["filename"].endswith('.csv'):
+
+    # FIX: leer la hoja DB_TOTAL (la estándar de la herramienta Canguro).
+    # Si no existe esa hoja (CSV u otro formato), leer la primera.
+    if session["filename"].lower().endswith(".csv"):
         df = pd.read_csv(io.BytesIO(downloaded))
     else:
-        df = pd.read_excel(io.BytesIO(downloaded))
-        
-    df = df.where(pd.notnull(df), None) # Clean NaNs for JSON
+        try:
+            df = pd.read_excel(io.BytesIO(downloaded), sheet_name=_HOJA_DATOS)
+        except Exception:
+            df = pd.read_excel(io.BytesIO(downloaded))
+
+    # Convertir columnas datetime a string ISO para que sean JSON-serializables
+    for col in df.select_dtypes(include=["datetime64[ns]", "datetimetz"]).columns:
+        df[col] = df[col].dt.strftime("%Y-%m-%d")
+
+    df = df.where(pd.notnull(df), None)
     raw_payload = df.to_dict(orient="records")
-    
+
     bronze_data = {
         "upload_id": upload_id,
         "filename": session["filename"],
-        "raw_payload": raw_payload
+        "raw_payload": raw_payload,
     }
-    
-    # 1. Insertar en capa Bronce
+
+    # 1. Insertar en Capa Bronze
     supabase_client.table("bronze_raw_clinical_data").insert(bronze_data).execute()
-    
-    # 2. Actualizar estado y Limpiar storage
+
+    # 2. Actualizar estado y limpiar Storage temporal
     supabase_client.table("upload_sessions").update({"status": "promoted"}).eq("id", upload_id).execute()
     supabase_client.storage.from_("temp_uploads").remove([storage_path])
-    
-    return {"message": "Datos promovidos oficialmente a la Capa Bronce y borrados de Storage temporal."}
+
+    # 3. Lanzar ETL Bronze→Silver en segundo plano
+    background_tasks.add_task(_etl_background, upload_id, nombre_fundacion)
+
+    return {
+        "message": "Datos promovidos a Capa Bronze. ETL Bronze→Silver iniciado en segundo plano.",
+        "upload_id": upload_id,
+        "etl_status": "running"
+    }
 
